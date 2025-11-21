@@ -66,6 +66,8 @@ export class SyncService {
   ): Promise<void> {
     for (const node of backlogTree) {
       const currentPath = pathPrefix ? `${pathPrefix}/${node.title}` : node.title;
+      const forceUpdatePaths = ['ステータス定義'];
+      const forceUpdate = forceUpdatePaths.some(path => currentPath.endsWith(path));
 
       if (node.type === 'folder') {
         // フォルダの場合
@@ -109,7 +111,7 @@ export class SyncService {
           const backlogUpdated = node.updated ? new Date(node.updated) : new Date(0);
           const notionUpdated = new Date(notionPage.lastEditedTime);
 
-          if (backlogUpdated > notionUpdated) {
+          if (forceUpdate || backlogUpdated > notionUpdated) {
             // Backlogの方が新しい → 更新
             console.log(`更新: ${currentPath}`);
             const doc = await this.backlogClient.getDocument(node.id);

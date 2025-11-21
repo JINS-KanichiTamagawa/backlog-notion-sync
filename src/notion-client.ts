@@ -89,6 +89,12 @@ export class NotionClient {
    * ページの内容を更新（Markdown形式のテキストをNotion Blocksに変換）
    */
   async updatePageContent(pageId: string, markdown: string): Promise<void> {
+    // 念のためページを非アーカイブ化（アーカイブ状態だと編集できないため）
+    await this.client.pages.update({
+      page_id: pageId,
+      archived: false,
+    });
+
     // 既存のブロックを削除（最初のブロックを取得して削除）
     const existingBlocks = await this.client.blocks.children.list({
       block_id: pageId,
@@ -147,7 +153,9 @@ export class NotionClient {
     // 改行コードを統一し、行末のバックスラッシュ（Markdownの強制改行）を適切に扱う
     const normalizedMarkdown = markdown
       .replace(/\r\n/g, '\n') // Windows改行を統一
-      .replace(/\\\n/g, '\n\n'); // 行末のバックスラッシュは改行として扱う（空行を挿入）
+      .replace(/\\n/g, '\n') // 文字列としての「\n」を改行に変換
+      .replace(/\\\s*\n/g, '\n\n') // 行末のバックスラッシュは空行扱い
+      .replace(/\\$/gm, ''); // 行末に残ったバックスラッシュを除去
 
     const lines = normalizedMarkdown.split('\n');
     const blocks: any[] = [];

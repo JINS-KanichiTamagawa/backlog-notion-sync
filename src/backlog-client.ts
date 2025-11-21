@@ -145,29 +145,28 @@ export class BacklogClient {
     console.log(`取得したドキュメント数: ${documents.length}`);
 
     // 各ドキュメントの詳細を取得して階層情報を確認
+    // 削除済みドキュメントは除外する
     const documentsWithDetails: any[] = [];
     for (const doc of documents) {
       try {
         const detail = await this.getDocumentDetail(doc.id);
+        // ドキュメント詳細が正常に取得できた場合のみ追加
         documentsWithDetails.push({
           ...doc,
           ...detail,
         });
       } catch (error: any) {
-        console.warn(`ドキュメント ${doc.id} の詳細取得に失敗:`, error.message);
-        documentsWithDetails.push(doc);
+        // 404エラー（削除済み）の場合は除外
+        if (error.message && (error.message.includes('404') || error.message.includes('not found'))) {
+          console.log(`削除済みドキュメントを除外: ${doc.title || doc.id}`);
+          continue;
+        }
+        // その他のエラーの場合は警告を出してスキップ
+        console.warn(`ドキュメント ${doc.id} (${doc.title || 'タイトル不明'}) の詳細取得に失敗:`, error.message);
+        // エラーが発生したドキュメントは除外（削除済みの可能性があるため）
       }
     }
 
-    // デバッグ: 最初の数件のドキュメントの詳細を確認
-    console.log('ドキュメント詳細のサンプル:');
-    for (let i = 0; i < Math.min(3, documentsWithDetails.length); i++) {
-      const doc = documentsWithDetails[i];
-      console.log(`- ${doc.title}: json=${doc.json ? 'あり' : 'なし'}, plain=${doc.plain ? 'あり' : 'なし'}`);
-      if (doc.json) {
-        console.log(`  json構造:`, JSON.stringify(doc.json, null, 2).substring(0, 500));
-      }
-    }
 
     // 階層構造を構築
     // Backlogのドキュメントは`json`フィールドに階層情報が含まれている可能性がある
@@ -206,9 +205,9 @@ export class BacklogClient {
     // 実際のBacklog APIでは、ドキュメントの親子関係が別の方法で管理されている可能性がある
     // ここでは、タイトルから階層を推測する（例: "FIX済み仕様"がフォルダで、その配下にドキュメントがある）
     
-    // フォルダ名のリスト（ユーザーが指定したフォルダ名）
-    // 「FIX済み仕様」は親ページを作成せず、その子ページをルートに配置
-    const folderNames = ['プランニング', 'テスト'];
+    // フォルダ名のリスト（Backlogの実際の階層構造に合わせる）
+    // 注意: 「テスト（バルテス様）」はAPIではドキュメントとして返されるが、実際はフォルダとして扱う
+    const folderNames = ['FIX済み仕様', 'プランニング', 'テスト（バルテス様）'];
     const rootNodes: BacklogDocumentTreeNode[] = [];
     const folderNodes = new Map<string, BacklogDocumentTreeNode>();
     const allNodes = new Map<string, BacklogDocumentTreeNode>();
@@ -234,7 +233,8 @@ export class BacklogClient {
 
       allNodes.set(doc.id, node);
 
-      // フォルダ名と一致する場合はフォルダとして扱う（FIX済み仕様は除外）
+      // フォルダ名と一致する場合はフォルダとして扱う
+      // 「テスト（バルテス様）」はchildlistがない場合でもフォルダとして扱う
       if (folderNames.includes(doc.title)) {
         node.type = 'folder';
         folderNodes.set(doc.id, node);
@@ -262,43 +262,24 @@ export class BacklogClient {
     // ここでは、フォルダ名に基づいてドキュメントを分類する（簡易的な実装）
     // 実際のBacklogでは、ドキュメントのタイトルや他の情報から親子関係を推測する必要がある
     
-    // 「FIX済み仕様」の子ページをルートに直接配置
-    const fixSpecDocuments = [
-      'FIX済み仕様',
-      'ステータス定義',
-      'システム名称について',
-      '現行運用におけるS番号Z番号とは？',
-      'プロセスセンターコード、住所情報',
-      'マニュアル作成',
-      '議事メモNotebookLMパス',
-      '開発PLタスク',
-    ];
-
-    // フォルダ名とドキュメントの対応関係を定義（実際のBacklogの構造に応じて調整が必要）
+    // フォルダ名とドキュメントの対応関係を定義（Backlogの実際の階層構造に合わせる）
+    // 「議事メモNotebookLMパス」と「開発PLタスク」はルートに配置
     const folderDocumentMapping: { [key: string]: string[] } = {
+      'FIX済み仕様': [
+        'システム名称について',
+        'プロセスセンターコード、住所情報',
+        'ステータス定義',
+        '現行運用におけるS番号Z番号とは？',
+      ],
       'プランニング': [
         '20251107-SP2プランニング',
         '20251002 プランニング',
-        '開発PLタスク',
-        '議事メモNotebookLMパス',
       ],
-      'テスト': [
-        'テスト資料',
-        'テスト（バルテス様）',
+      'テスト（バルテス様）': [
+        'マニュアル作成',
         'テスト進行キックオフ',
       ],
     };
-
-    // 「FIX済み仕様」の子ページをルートに追加
-    for (const docName of fixSpecDocuments) {
-      const doc = documentsWithDetails.find(d => d.title === docName);
-      if (doc && allNodes.has(doc.id)) {
-        const node = allNodes.get(doc.id)!;
-        if (node.type === 'document') {
-          rootNodes.push(node);
-        }
-      }
-    }
 
     // フォルダ配下のドキュメントを割り当て
     for (const [folderId, folderNode] of folderNodes.entries()) {
@@ -319,7 +300,10 @@ export class BacklogClient {
       }
     }
 
-    // フォルダに割り当てられていない、かつFIX済み仕様の子でもないドキュメントをルートに追加
+    // ルートに配置するドキュメント（フォルダと同レベル）
+    const rootDocuments = ['議事メモNotebookLMパス', '開発PLタスク'];
+
+    // フォルダに割り当てられていないドキュメントをルートに追加
     const assignedDocIds = new Set<string>();
     for (const folderNode of folderNodes.values()) {
       if (folderNode.children) {
@@ -328,16 +312,35 @@ export class BacklogClient {
         }
       }
     }
-    // FIX済み仕様の子ページも除外
-    for (const docName of fixSpecDocuments) {
+
+    // ルートドキュメントを追加
+    for (const docName of rootDocuments) {
       const doc = documentsWithDetails.find(d => d.title === docName);
-      if (doc) {
-        assignedDocIds.add(doc.id);
+      if (doc && allNodes.has(doc.id)) {
+        const node = allNodes.get(doc.id)!;
+        if (node.type === 'document') {
+          rootNodes.push(node);
+          assignedDocIds.add(doc.id);
+        }
       }
     }
 
+    // Backlog側で削除済みの可能性があるドキュメントを除外
+    const excludedDocuments = [
+      'テスト資料',
+      'テスト',
+      'Notion Test',
+      'ドキュメント機能へようこそ',
+    ];
+
+    // その他のフォルダに割り当てられていないドキュメントをルートに追加（除外リストに含まれていないもののみ）
     for (const [docId, node] of allNodes.entries()) {
-      if (node.type === 'document' && !folderNodes.has(docId) && !assignedDocIds.has(docId)) {
+      if (
+        node.type === 'document' &&
+        !folderNodes.has(docId) &&
+        !assignedDocIds.has(docId) &&
+        !excludedDocuments.includes(node.title)
+      ) {
         rootNodes.push(node);
       }
     }

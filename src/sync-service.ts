@@ -26,6 +26,9 @@ export class SyncService {
     // 階層構造を再帰的に同期
     await this.syncTree(backlogTree, notionParentPageId);
 
+    // Backlogに存在しないNotionページを検出して削除
+    await this.deleteOrphanedPages(backlogTree, notionParentPageId);
+
     console.log('同期が完了しました。');
   }
 
@@ -33,14 +36,23 @@ export class SyncService {
    * Notionのページ構造をマップに構築（再帰的）
    */
   private async buildNotionPageMap(parentPageId: string, prefix: string = ''): Promise<void> {
-    const pages = await this.notionClient.getChildPages(parentPageId);
-    
-    for (const page of pages) {
-      const fullPath = prefix ? `${prefix}/${page.title}` : page.title;
-      this.notionPageMap.set(fullPath, page);
+    try {
+      const pages = await this.notionClient.getChildPages(parentPageId);
       
-      // 子ページも再帰的に取得
-      await this.buildNotionPageMap(page.id, fullPath);
+      for (const page of pages) {
+        const fullPath = prefix ? `${prefix}/${page.title}` : page.title;
+        this.notionPageMap.set(fullPath, page);
+        
+        // 子ページも再帰的に取得
+        await this.buildNotionPageMap(page.id, fullPath);
+      }
+    } catch (error: any) {
+      // 親ページが見つからない場合はスキップ
+      if (error.code === 'object_not_found') {
+        console.warn(`親ページが見つかりません（スキップ）: ${parentPageId}`);
+        return;
+      }
+      throw error;
     }
   }
 
@@ -116,6 +128,50 @@ export class SyncService {
     console.log(`✓ ${fullPath} を作成しました。`);
     
     return pageId;
+  }
+
+  /**
+   * Backlogに存在しないNotionページを検出して削除
+   */
+  private async deleteOrphanedPages(
+    backlogTree: BacklogDocumentTreeNode[],
+    notionParentPageId: string
+  ): Promise<void> {
+    // Backlogに存在するすべてのページのパスを収集
+    const backlogPaths = new Set<string>();
+    const collectPaths = (nodes: BacklogDocumentTreeNode[], prefix: string = '') => {
+      for (const node of nodes) {
+        const currentPath = prefix ? `${prefix}/${node.title}` : node.title;
+        backlogPaths.add(currentPath);
+        if (node.children && node.children.length > 0) {
+          collectPaths(node.children, currentPath);
+        }
+      }
+    };
+    collectPaths(backlogTree);
+
+    // Notionに存在するがBacklogに存在しないページを検出
+    const orphanedPages: { path: string; page: NotionPage }[] = [];
+    for (const [path, page] of this.notionPageMap.entries()) {
+      if (!backlogPaths.has(path)) {
+        orphanedPages.push({ path, page });
+      }
+    }
+
+    if (orphanedPages.length > 0) {
+      console.log(`\nBacklogに存在しないNotionページを検出: ${orphanedPages.length}件`);
+      for (const { path, page } of orphanedPages) {
+        console.log(`  削除対象: ${path}`);
+        try {
+          await this.notionClient.deletePage(page.id);
+          console.log(`  ✓ ${path} を削除しました。`);
+        } catch (error: any) {
+          console.warn(`  ✗ ${path} の削除に失敗: ${error.message}`);
+        }
+      }
+    } else {
+      console.log('\n削除対象のページはありません。');
+    }
   }
 }
 

@@ -74,6 +74,21 @@ export class SyncService {
         // Notionでフォルダページを取得または作成
         let folderPageId = await this.getOrCreateFolderPage(notionParentPageId, node.title, currentPath);
         
+        // フォルダページ自体のコンテンツを更新（Backlog側にコンテンツがある場合）
+        // フォルダとして扱っているが、実態はドキュメントである可能性があるため
+        try {
+          const doc = await this.backlogClient.getDocument(node.id);
+          // console.log(`フォルダ「${node.title}」のコンテンツ長: ${doc.content ? doc.content.length : 0}`);
+          if (doc.content && doc.content.trim().length > 0) {
+            console.log(`フォルダページのコンテンツ更新: ${currentPath}`);
+            // コンテンツがある場合のみ更新（子ページは維持される）
+            await this.notionClient.updatePageContent(folderPageId, doc.content);
+          }
+        } catch (error) {
+          // コンテンツ取得に失敗した場合（純粋なフォルダなど）は無視
+          // console.log(`フォルダコンテンツ取得スキップ: ${node.title}`);
+        }
+
         // 子要素を再帰的に同期
         if (node.children && node.children.length > 0) {
           await this.syncTree(node.children, folderPageId, currentPath);

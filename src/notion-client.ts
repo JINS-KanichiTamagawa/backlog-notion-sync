@@ -94,8 +94,13 @@ export class NotionClient {
       block_id: pageId,
     });
 
-    // 既存のブロックを削除
+    // 既存のブロックを削除（child_page以外）
     for (const block of existingBlocks.results) {
+      // 子ページは削除しない
+      if ('type' in block && block.type === 'child_page') {
+        continue;
+      }
+      
       await this.client.blocks.delete({
         block_id: block.id,
       });
@@ -390,16 +395,20 @@ export class NotionClient {
     const boldRegex = /\*\*(.+?)\*\*/g;
     const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
 
+    // バックスラッシュを改行コードに置換
+    // Backlogでは改行がバックスラッシュとして表現される場合があるため
+    const normalizedText = text.replace(/\\/g, '\n');
+
     // まずリンクを処理
-    const linkMatches = Array.from(text.matchAll(linkRegex));
-    const boldMatches = Array.from(text.matchAll(boldRegex));
+    const linkMatches = Array.from(normalizedText.matchAll(linkRegex));
+    const boldMatches = Array.from(normalizedText.matchAll(boldRegex));
 
     // シンプルな実装：通常のテキストとして返す
     // より高度な変換は後で改善可能
     richText.push({
       type: 'text',
       text: {
-        content: text,
+        content: normalizedText,
       },
     });
 

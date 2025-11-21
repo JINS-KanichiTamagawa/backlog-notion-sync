@@ -144,7 +144,12 @@ export class NotionClient {
    * 簡易版：行ごとに変換（より高度な変換は後で改善可能）
    */
   private markdownToBlocks(markdown: string): any[] {
-    const lines = markdown.split('\n');
+    // 改行コードを統一し、行末のバックスラッシュ（Markdownの強制改行）を適切に扱う
+    const normalizedMarkdown = markdown
+      .replace(/\r\n/g, '\n') // Windows改行を統一
+      .replace(/\\\n/g, '\n\n'); // 行末のバックスラッシュは改行として扱う（空行を挿入）
+
+    const lines = normalizedMarkdown.split('\n');
     const blocks: any[] = [];
     let i = 0;
 

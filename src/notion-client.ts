@@ -160,15 +160,14 @@ export class NotionClient {
       }
 
       // テーブルの検出（|で始まり|で終わる行）
-      // 一旦無効化：テーブルは通常のテキストとして扱う
-      // if (this.isTableRow(trimmedLine)) {
-      //   const tableData = this.parseTable(lines, i);
-      //   if (tableData.rows.length > 0) {
-      //     blocks.push(this.createTableBlock(tableData.rows, tableData.hasHeader));
-      //     i = tableData.nextIndex;
-      //     continue;
-      //   }
-      // }
+      if (this.isTableRow(trimmedLine)) {
+        const tableData = this.parseTable(lines, i);
+        if (tableData.rows.length > 0) {
+          blocks.push(this.createTableBlock(tableData.rows, tableData.hasHeader));
+          i = tableData.nextIndex;
+          continue;
+        }
+      }
 
       // 見出しの検出
       if (trimmedLine.startsWith('### ')) {
